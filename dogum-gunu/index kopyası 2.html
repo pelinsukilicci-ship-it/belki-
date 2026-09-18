@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Birthday Card</title>
+  <style>
+    :root {
+      --kraft-bg: #d4b895;
+      --paper-light: #fdfbf7;
+      --accent-red: #8b1e1e;
+      --card-width: 400px;
+      --card-height: 550px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      background-color: var(--kraft-bg);
+      background-image: 
+        url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E"),
+        radial-gradient(circle at center, #e6d2b5 0%, #c4a47c 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* --- Sahne ve Kart Yapısı --- */
+    .scene {
+      perspective: 2500px;
+      position: relative;
+      width: calc(var(--card-width) * 2);
+      height: var(--card-height);
+      display: flex;
+      justify-content: center;
+      margin-top: 40px;
+    }
+
+    .card {
+      width: var(--card-width);
+      height: var(--card-height);
+      position: relative;
+      transition: transform 1s cubic-bezier(0.645, 0.045, 0.355, 1);
+      transform-style: preserve-3d;
+      transform: translateX(0); 
+    }
+
+    /* Kart açıldığında sayfanın tam ortalanması için sola kaydırıyoruz */
+    .card.step-1 {
+      transform: translateX(calc(var(--card-width) / 2));
+    }
+    .card.step-2 {
+      transform: translateX(calc(var(--card-width) / 2));
+    }
+
+    /* SAYFA VE KAPAK (FLAP) KATMANLARI */
+    .page {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--paper-light);
+      box-shadow: inset 0 0 40px rgba(0,0,0,0.05), 0 10px 20px rgba(0,0,0,0.2);
+      border: 1px solid #dcd3c6;
+    }
+    
+    .bg-img {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+
+    .flap {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform-style: preserve-3d;
+      transform-origin: left center;
+      transition: transform 1.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+    
+    /* Yüzey Görünürlük Ayarları - Ters yazıları engellemek için -webkit eklendi */
+    .face-front, .face-back {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      border-radius: 4px 12px 12px 4px;
+      overflow: hidden;
+    }
+    .face-back {
+      transform: rotateY(180deg);
+      border-radius: 12px 4px 4px 12px;
+    }
+
+    /* Katman Sıralamaları Z-Index */
+    .flap-1 { z-index: 30; cursor: pointer; }
+    .flap-2 { z-index: 20; }
+    .base-page { z-index: 10; border-radius: 4px 12px 12px 4px; overflow: hidden; }
+
+    /* Açılış Animasyonları */
+    .card.step-1 .flap-1 {
+      transform: rotateY(-180deg);
+      cursor: default;
+    }
+    .card.step-2 .flap-2 {
+      transform: rotateY(-180deg);
+      z-index: 40; /* Açıldığında en üstte durması için */
+    }
+
+    /* --- Sayfa İçi Detaylı Tasarımlar --- */
+
+    /* Mektup Sayfası (2. ve 3. Sayfa - Flap 1'in Arkası) */
+    .page-left {
+      background-color: #f0e6d2;
+      display: flex;
+      /* HATA ÇÖZÜMÜ: Zarfı sayfanın en altına sabitledik, böylece mektup yukarı çıkınca ekrandan taşmayacak */
+      align-items: flex-end; 
+      justify-content: center;
+      padding-bottom: 25px; /* Zarfın alt boşluğu */
+    }
+    .envelope-container {
+      position: relative;
+      width: 85%;
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+    }
+    .envelope-img {
+      width: 100%;
+      position: relative; 
+      z-index: 3;
+      pointer-events: none;
+      filter: drop-shadow(0 5px 10px rgba(0,0,0,0.2));
+    }
+    .letter-img {
+      width: 85%;
+      position: absolute;
+      bottom: 10px; /* Zarfın içinde durması için başlangıç noktası */
+      z-index: 2;
+      transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+      cursor: pointer;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    }
+    .letter-img.lifted {
+      /* HATA ÇÖZÜMÜ: Yukarıya çıkma mesafesini (translateY) ve büyümeyi (scale) azalttık. Artık yazılar tam sınırda kalacak ve okunabilecek. */
+      transform: translateY(-75px) scale(1.02); 
+      z-index: 10;
+      box-shadow: 0 15px 30px rgba(0,0,0,0.3);
+    }
+
+    /* 6. sayfadaki şarkı oynatma bağlantısı (Oynat butonunun olduğu yer) */
+    .spotify-play-link {
+      position: absolute;
+      bottom: 27%; 
+      left: 36%;
+      width: 28%;
+      height: 18%;
+      z-index: 20;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.2s, background-color 0.2s;
+    }
+    .spotify-play-link:hover {
+      background-color: rgba(29, 185, 84, 0.2);
+      transform: scale(1.05);
+    }
+    
+    /* Mumlar ve Kontroller (4. Sayfa Pasta Üzeri) */
+    .flames-container {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 2;
+    }
+    .flame {
+      position: absolute; width: 25px; height: 45px;
+      background: #ffcc00;
+      border-radius: 50% 50% 20% 20% / 60% 60% 40% 40%;
+      box-shadow: 0 0 15px #ff6600, inset 0 -5px 5px #ff3300;
+      transform-origin: bottom center;
+      transition: opacity 0.3s ease, transform 0.1s ease;
+      animation: flicker 0.1s infinite alternate;
+      clip-path: polygon(50% 0%, 75% 25%, 100% 60%, 80% 100%, 20% 100%, 0% 60%, 25% 25%);
+    }
+    #flame1 { top: 56%; left: 33%; }
+    #flame2 { top: 51%; left: 47%; }
+    #flame3 { top: 56%; left: 63%; }
+
+    @keyframes flicker {
+      0% { transform: scale(1) rotate(-2deg); opacity: 0.9; }
+      100% { transform: scale(1.05) rotate(2deg); opacity: 1; }
+    }
+    .flame.blowing { animation: none; }
+    .flame.out { opacity: 0; transform: scale(0) !important; }
+
+    .controls {
+      position: absolute; bottom: 0; left: 0; width: 100%;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      z-index: 5; padding: 30px 20px 20px 20px;
+      background: linear-gradient(to top, rgba(253, 251, 247, 0.95) 0%, rgba(253, 251, 247, 0.8) 50%, transparent 100%);
+    }
+    .mic-meter {
+      width: 80%; height: 12px; background: #e0d8d0;
+      border-radius: 6px; overflow: hidden; border: 1px solid #c4b5a3;
+    }
+    .mic-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #4caf50, #ffeb3b, #f44336);
+      transition: width 0.05s linear;
+    }
+    button {
+      background: var(--accent-red); color: white; border: none;
+      padding: 10px 20px; border-radius: 6px; font-family: inherit;
+      font-weight: bold; cursor: pointer;
+      box-shadow: 2px 4px 0 rgba(0,0,0,0.2); transition: transform 0.1s;
+    }
+    button:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,0.2); }
+
+    .close-btn {
+      position: absolute; top: 20px; left: 20px; opacity: 0;
+      pointer-events: none; transition: opacity 0.5s; z-index: 100;
+    }
+    .card.step-1 .close-btn, .card.step-2 .close-btn { opacity: 1; pointer-events: auto; }
+
+    /* Sürpriz Mesajı */
+    .wish-msg {
+      position: absolute; top: 30%; left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      background: rgba(253, 251, 247, 0.95);
+      padding: 20px; border: 2px dashed var(--accent-red);
+      border-radius: 8px; text-align: center;
+      opacity: 0; pointer-events: none;
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 10;
+    }
+    .wish-msg.show {
+      opacity: 1; transform: translate(-50%, -50%) scale(1); pointer-events: auto;
+    }
+    .btn-surprise {
+      background: #1DB954; 
+      margin-top: 10px;
+      font-size: 1.1rem;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
+    /* ========================================================= */
+    /* Sayfa Arkasındaki Sızıntıları Engelleme */
+    /* ========================================================= */
+    
+    .wish-msg, .controls, .flames-container {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+    }
+
+    .card.step-2 .wish-msg,
+    .card.step-2 .controls,
+    .card.step-2 .flames-container {
+      opacity: 0 !important;
+      visibility: hidden !important;
+      transition: opacity 0.3s ease, visibility 0.3s;
+    }
+
+    #confetti {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      pointer-events: none; z-index: 999;
+    }
+  </style>
+</head>
+<body>
+
+  <canvas id="confetti"></canvas>
+  <button class="close-btn" id="closeBtn">← Kartı Kapat</button>
+
+  <div class="scene">
+    <div class="card" id="card">
+
+      <!-- ========================================== -->
+      <!-- 6. SAYFA (En Alt Katman - SAĞDA GÖRÜNECEK) -->
+      <!-- ========================================== -->
+      <div class="page base-page">
+        <img src="6.png" class="bg-img" alt="6. Sayfa" onerror="this.src='6.jpg';">
+        <!-- Oynat butonuna gömülü Spotify linki -->
+        <a href="https://open.spotify.com/intl-tr/track/39FFlqltctkj6vkIcVgkec?si=566292fb130e4be1" target="_blank" class="spotify-play-link" title="Şarkıyı Dinle"></a>
+      </div>
+
+
+      <!-- ========================================== -->
+      <!-- FLAP 2 (4. Sayfa Ön Yüz / 5. Sayfa Arka Yüz) -->
+      <!-- ========================================== -->
+      <div class="flap flap-2" id="flapRight">
+        
+        <!-- ÖN YÜZ: 4. SAYFA (Pasta Sayfası) -->
+        <div class="page face-front page-cake">
+          <img src="4.png" class="bg-img" alt="Cake" onerror="this.src='4.jpg';">
+          
+          <div class="flames-container">
+            <div class="flame" id="flame1"></div>
+            <div class="flame" id="flame2"></div>
+            <div class="flame" id="flame3"></div>
+          </div>
+
+          <div class="wish-msg" id="wishMsg">
+            <h3 style="color: var(--accent-red); margin-bottom: 15px;">Make a wish! 🎉</h3>
+            <button class="btn-surprise" id="btnSurprise">Hediyeni Gör! 🎁</button>
+            <br>
+            <button id="relightBtn" style="background:#888; margin-top:10px; font-size:0.8rem; padding: 5px 10px;">Mumları Yeniden Yak</button>
+          </div>
+
+          <div class="controls">
+            <div class="mic-meter"><div class="mic-fill" id="micFill"></div></div>
+            <button id="fallbackBtn">Blow to extinguish! 💨</button>
+          </div>
+        </div>
+
+        <!-- ARKA YÜZ: 5. SAYFA (180 derece açılınca SOLDA GÖRÜNECEK) -->
+        <div class="page face-back" style="background: var(--paper-light);">
+          <img src="5.png" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; padding: 20px;" alt="5. Sayfa" onerror="this.src='5.jpg';">
+        </div>
+
+      </div>
+
+
+      <!-- ========================================== -->
+      <!-- FLAP 1 (1. Sayfa Ön Yüz / Mektup Arka Yüz) -->
+      <!-- ========================================== -->
+      <div class="flap flap-1" id="flap">
+        
+        <!-- ÖN YÜZ: 1. SAYFA (Kapak) -->
+        <div class="page face-front page-cover">
+          <img src="1.png" class="bg-img" alt="Cover" onerror="this.src='1.jpg';">
+        </div>
+
+        <!-- ARKA YÜZ: MEKTUP SAYFASI (180 derece açılınca SOLDA GÖRÜNECEK) -->
+        <div class="page face-back page-left">
+          <div class="envelope-container">
+            <img src="3.png" class="letter-img" id="letter" alt="Letter" onerror="this.src='3.jpg';">
+            <img src="2.png" class="envelope-img" alt="Envelope" onerror="this.src='2.jpg';">
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const card = document.getElementById('card');
+    const flap = document.getElementById('flap');
+    const closeBtn = document.getElementById('closeBtn');
+    
+    // 1. Adım: Kapağı (Flap 1) Sola Aç
+    flap.addEventListener('click', (e) => {
+      if (!card.classList.contains('step-1') && !card.classList.contains('step-2')) {
+        card.classList.add('step-1');
+        initAudio(); // Mum üfleme ses iznini başlat
+      }
+    });
+    
+    // Kartı tamamen kapat
+    closeBtn.addEventListener('click', () => {
+      card.classList.remove('step-1', 'step-2');
+      document.getElementById('letter').classList.remove('lifted');
+    });
+
+    // Mektuba tıklanınca yukarı kalksın
+    const letter = document.getElementById('letter');
+    letter.addEventListener('click', (e) => {
+      e.stopPropagation();
+      letter.classList.toggle('lifted');
+    });
+
+    // 2. Adım: Pasta sayfasını (Flap 2) sola 180 derece aç ve iki sayfayı (5. ve 6. sayfalar) göster
+    document.getElementById('btnSurprise').addEventListener('click', () => {
+      card.classList.add('step-2');
+    });
+
+    /* --- MUM ÜFLEME VE MİKROFON MEKANİZMASI --- */
+    let audioContext, analyser, microphone, dataArray;
+    let isOut = false;
+    let blowDuration = 0;
+    const BLOW_THRESHOLD = 0.5;
+    
+    const flames = document.querySelectorAll('.flame');
+    const micFill = document.getElementById('micFill');
+    const wishMsg = document.getElementById('wishMsg');
+    
+    async function initAudio() {
+      if (audioContext) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        processAudio();
+      } catch (err) {
+        console.log('Mic access denied or unavailable.', err);
+      }
+    }
+
+    function processAudio() {
+      if (isOut) return;
+      requestAnimationFrame(processAudio);
+      
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < 15; i++) sum += dataArray[i];
+      let avg = sum / 15;
+
+      let percent = Math.min(100, (avg / 100) * 100);
+      micFill.style.width = percent + '%';
+
+      if (avg > 40) {
+        applyBlowPhysics(percent);
+        blowDuration += 0.016;
+        if (blowDuration >= BLOW_THRESHOLD) extinguish();
+      } else {
+        resetFlames();
+        blowDuration = Math.max(0, blowDuration - 0.02);
+      }
+    }
+
+    function applyBlowPhysics(intensity) {
+      const skew = Math.min(45, intensity * 0.4);
+      flames.forEach(f => {
+        f.classList.add('blowing');
+        f.style.transform = `skewX(${skew}deg) scaleY(0.8) translateX(${skew/2}px)`;
+      });
+    }
+
+    function resetFlames() {
+      if (isOut) return;
+      flames.forEach(f => {
+        f.classList.remove('blowing');
+        f.style.transform = '';
+      });
+    }
+
+    function extinguish() {
+      isOut = true;
+      flames.forEach((f, i) => {
+        setTimeout(() => f.classList.add('out'), i * 150);
+      });
+      setTimeout(() => {
+        wishMsg.classList.add('show');
+        fireConfetti();
+      }, 500);
+    }
+
+    document.getElementById('relightBtn').addEventListener('click', () => {
+      isOut = false;
+      blowDuration = 0;
+      wishMsg.classList.remove('show');
+      flames.forEach(f => {
+        f.classList.remove('out', 'blowing');
+        f.style.transform = '';
+      });
+      micFill.style.width = '0%';
+      if(audioContext) processAudio();
+    });
+
+    let fallbackTimer;
+    const fallbackBtn = document.getElementById('fallbackBtn');
+
+    const startFallback = (e) => {
+      if (e) e.preventDefault();
+      if (isOut) return;
+      fallbackTimer = setInterval(() => {
+        blowDuration += 0.05;
+        micFill.style.width = Math.min(100, blowDuration * 200) + '%';
+        applyBlowPhysics(60);
+        if (blowDuration >= BLOW_THRESHOLD) {
+          stopFallback();
+          extinguish();
+        }
+      }, 50);
+    };
+
+    const stopFallback = () => {
+      clearInterval(fallbackTimer);
+      if (!isOut) {
+        blowDuration = 0;
+        micFill.style.width = '0%';
+        resetFlames();
+      }
+    };
+
+    fallbackBtn.addEventListener('mousedown', startFallback);
+    fallbackBtn.addEventListener('mouseup', stopFallback);
+    fallbackBtn.addEventListener('mouseleave', stopFallback);
+    fallbackBtn.addEventListener('touchstart', startFallback);
+    fallbackBtn.addEventListener('touchend', stopFallback);
+
+    window.addEventListener('keydown', (e) => { if (e.code === 'Space' && !e.repeat) startFallback(); });
+    window.addEventListener('keyup', (e) => { if (e.code === 'Space') stopFallback(); });
+
+    const canvas = document.getElementById('confetti');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+
+    function fireConfetti() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      particles = [];
+      const colors = ['#8b1e1e', '#e6d2b5', '#ffcc00', '#ffffff'];
+      
+      for (let i = 0; i < 100; i++) {
+        particles.push({
+          x: canvas.width / 2,
+          y: canvas.height / 2,
+          vx: (Math.random() - 0.5) * 15,
+          vy: (Math.random() - 1) * 15,
+          size: Math.random() * 8 + 4,
+          color: colors[Math.floor(Math.random() * colors.length)],
+          tilt: Math.floor(Math.random() * 10) - 10,
+          tiltAngle: 0,
+          tiltAngleIncr: (0.05 + Math.random() * 0.05)
+        });
+      }
+      requestAnimationFrame(renderConfetti);
+    }
+
+    function renderConfetti() {
+      if (particles.length === 0) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      let active = false;
+
+      particles.forEach(p => {
+        p.tiltAngle += p.tiltAngleIncr;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.2;
+        
+        if (p.y < canvas.height) active = true;
+
+        ctx.beginPath();
+        ctx.lineWidth = p.size;
+        ctx.strokeStyle = p.color;
+        ctx.moveTo(p.x + p.tilt + p.size, p.y);
+        ctx.lineTo(p.x + p.tilt, p.y + p.tilt + p.size);
+        ctx.stroke();
+      });
+
+    if (active) requestAnimationFrame(renderConfetti);
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  </script>
+</body>
+</html>
